@@ -422,8 +422,26 @@ func isInfinite*(a: Duration): bool {.inline.} =
   ## Returns ``true`` if Duration ``a`` is infinite.
   a.value == InfiniteDuration.value
 
+when defined(chronosClockHook):
+  var customMomentSource {.threadvar.}: proc(): Moment {.gcsafe, raises: [].}
+
+  proc setMomentSource*(source: proc(): Moment {.gcsafe, raises: [].}) =
+    ## Override ``Moment.now()`` for the current thread. Pass ``nil`` to
+    ## restore the default monotonic-clock implementation. Intended for
+    ## deterministic test infrastructure (e.g. fake-time); production
+    ## builds should leave this unset. Gated behind ``-d:chronosClockHook``
+    ## — unhooked builds compile out the hook entirely.
+    customMomentSource = source
+
+  proc clearMomentSource*() {.inline.} =
+    ## Reset the custom moment source on the current thread to ``nil``.
+    customMomentSource = nil
+
 proc now*(t: typedesc[Moment]): Moment {.inline.} =
   ## Returns current moment in time as Moment.
+  when defined(chronosClockHook):
+    if customMomentSource != nil:
+      return customMomentSource()
   Moment(value: int64(fastEpochTimeNano()))
 
 func init*(t: typedesc[Moment], value: int64, precision: Duration): Moment =
